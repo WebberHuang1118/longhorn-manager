@@ -85,6 +85,9 @@ func NewBackupMonitor(logger logrus.FieldLogger, ds *datastore.DataStore,
 		if volumeRecurringJobInfo != "" {
 			backup.Spec.Labels[types.VolumeRecurringJobInfoLabel] = volumeRecurringJobInfo
 		}
+
+		logrus.Infof("bk %v: NewBackupMonitor 1, status is BackupStateNew", backup.Name)
+
 		_, replicaAddress, err := engineClientProxy.SnapshotBackup(engine,
 			backup.Spec.SnapshotName, backup.Name, backupTargetClient.URL,
 			volume.Spec.BackingImage, biChecksum,
@@ -93,6 +96,7 @@ func NewBackupMonitor(logger logrus.FieldLogger, ds *datastore.DataStore,
 			if !strings.Contains(err.Error(), "DeadlineExceeded") {
 				m.logger.WithError(err).Warn("Cannot take snapshot backup")
 				m.Close()
+				logrus.Infof("bk %v: NewBackupMonitor 2, DeadlineExceeded", backup.Name)
 				return nil, err
 			}
 
@@ -111,6 +115,7 @@ func NewBackupMonitor(logger logrus.FieldLogger, ds *datastore.DataStore,
 			// https://github.com/longhorn/longhorn/issues/3545
 			m.logger.WithError(err).Warnf("Snapshot backup timeout")
 			backup.Status.State = longhorn.BackupStatePending
+			logrus.Infof("bk %v: NewBackupMonitor 3, status changes to BackupStatePending", backup.Name)
 		}
 
 		m.backupStatus = backup.Status
@@ -118,6 +123,7 @@ func NewBackupMonitor(logger logrus.FieldLogger, ds *datastore.DataStore,
 	}
 
 	// Create a goroutine to monitor the replica backup state/progress
+	logrus.Infof("bk %v: NewBackupMonitor 4, start monitoring", backup.Name)
 	go m.monitorBackups()
 
 	return m, nil
@@ -273,6 +279,15 @@ func (m *BackupMonitor) syncCallBack(currentBackupStatus longhorn.BackupStatus) 
 	defer m.backupStatusLock.Unlock()
 	if !reflect.DeepEqual(m.backupStatus, currentBackupStatus) {
 		m.backupStatus = currentBackupStatus
+
+		logrus.Infof("**** syncCallBack bk %v: enter ****", m.backupName)
+
+		logrus.Infof("syncCallBack bk %v: Progress %v State %v ReplicaAddress %v",
+			m.backupName, m.backupStatus.Progress, m.backupStatus.State,
+			m.backupStatus.ReplicaAddress)
+
+		logrus.Infof("**** syncCallBack bk %v: leave ****", m.backupName)
+
 		m.syncCallback(m.callbackKey)
 	}
 }

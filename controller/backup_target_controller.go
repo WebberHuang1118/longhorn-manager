@@ -428,6 +428,8 @@ func (btc *BackupTargetController) syncBackupVolume(backupTarget *longhorn.Backu
 				Name: backupVolumeName,
 			},
 		}
+
+		logrus.Infof("**** syncBackupVolume: CreateBackupVolume %v ****", backupVolume.Name)
 		if _, err = btc.ds.CreateBackupVolume(backupVolume); err != nil && !apierrors.IsAlreadyExists(err) {
 			log.WithError(err).Errorf("Error creating backup volume %s into cluster", backupVolumeName)
 			return err
@@ -443,6 +445,8 @@ func (btc *BackupTargetController) syncBackupVolume(backupTarget *longhorn.Backu
 	}
 	for backupVolumeName := range backupVolumesToDelete {
 		log.WithField("backupVolume", backupVolumeName).Info("Attempting to delete backup volume from cluster")
+
+		logrus.Infof("**** syncBackupVolume: DeleteBackupVolume %v ****", backupVolumeName)
 		if err = btc.ds.DeleteBackupVolume(backupVolumeName); err != nil {
 			log.WithError(err).Errorf("Error deleting backup volume %s from cluster", backupVolumeName)
 			return err

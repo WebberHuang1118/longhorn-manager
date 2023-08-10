@@ -205,6 +205,9 @@ func (bvc *BackupVolumeController) reconcile(backupVolumeName string) (err error
 		}
 	}
 
+	logrus.Infof("bbbb bkv %v: enter controller bbbb", backupVolume.Name)
+	defer func() { logrus.Infof("bbbb %v: leave controller with err %v bbbb", backupVolume.Name, err) }()
+
 	log := getLoggerForBackupVolume(bvc.logger, backupVolume)
 
 	// Get default backup target
@@ -260,6 +263,7 @@ func (bvc *BackupVolumeController) reconcile(backupVolumeName string) (err error
 	// Check the controller should run synchronization
 	if !backupVolume.Status.LastSyncedAt.IsZero() &&
 		!backupVolume.Spec.SyncRequestedAt.After(backupVolume.Status.LastSyncedAt.Time) {
+		logrus.Infof("bkv %v: reconcile 1", backupVolume.Name)
 		return nil
 	}
 
@@ -273,6 +277,7 @@ func (bvc *BackupVolumeController) reconcile(backupVolumeName string) (err error
 	// Get a list of all the backups that are stored in the backup target
 	res, err := backupTargetClient.BackupNameList(backupTargetClient.URL, backupVolumeName, backupTargetClient.Credential)
 	if err != nil {
+		logrus.Infof("bkv %v: reconcile 2", backupVolume.Name)
 		log.WithError(err).Error("Error listing backups from backup target")
 		return nil // Ignore error to prevent enqueue
 	}
@@ -281,6 +286,7 @@ func (bvc *BackupVolumeController) reconcile(backupVolumeName string) (err error
 	// Get a list of all the backups that exist as custom resources in the cluster
 	clusterBackups, err := bvc.ds.ListBackupsWithBackupVolumeName(backupVolumeName)
 	if err != nil {
+		logrus.Infof("bkv %v: reconcile 3", backupVolume.Name)
 		log.WithError(err).Error("Error listing backups in the cluster")
 		return err
 	}
@@ -312,6 +318,7 @@ func (bvc *BackupVolumeController) reconcile(backupVolumeName string) (err error
 	// and create the Backup CR in the cluster
 	backupsToPull := backupStoreBackups.Difference(clustersSet)
 	if count := backupsToPull.Len(); count > 0 {
+		logrus.Infof("bkv %v: reconcile 4, found backups in the target but absence as CR", backupVolume.Name)
 		log.Infof("Found %d backups in the backup target that do not exist in the cluster and need to be pulled", count)
 	}
 	for backupName := range backupsToPull {
@@ -328,6 +335,8 @@ func (bvc *BackupVolumeController) reconcile(backupVolumeName string) (err error
 				backupLabelMap[types.GetLonghornLabelKey(types.LonghornLabelVolumeAccessMode)] = accessMode
 			}
 		}
+
+		logrus.Infof("bkv %v: reconcile 5, create backup %v", backupVolume.Name, backupName)
 
 		backup := &longhorn.Backup{
 			ObjectMeta: metav1.ObjectMeta{
@@ -347,6 +356,7 @@ func (bvc *BackupVolumeController) reconcile(backupVolumeName string) (err error
 	// and delete the Backup CR in the cluster
 	backupsToDelete := clustersSet.Difference(backupStoreBackups)
 	if count := backupsToDelete.Len(); count > 0 {
+		logrus.Infof("bkv %v: reconcile 6, absence backups in the target but exists as CR", backupVolume.Name)
 		log.Infof("Found %d backups in the backup target that do not exist in the backup target and need to be deleted", count)
 	}
 	for backupName := range backupsToDelete {
@@ -370,22 +380,27 @@ func (bvc *BackupVolumeController) reconcile(backupVolumeName string) (err error
 	// skip read the backup volume config
 	if len(backupsToPull) == 0 && len(backupsToDelete) == 0 &&
 		backupVolume.Status.LastModificationTime.Time.Equal(configMetadata.ModificationTime) {
+		logrus.Infof("bkv %v: reconcile 7", backupVolume.Name)
 		backupVolume.Status.LastSyncedAt = syncTime
 		return nil
 	}
 
 	backupVolumeInfo, err := backupTargetClient.BackupVolumeGet(backupVolumeMetadataURL, backupTargetClient.Credential)
 	if err != nil {
+		logrus.Infof("bkv %v: reconcile 8", backupVolume.Name)
 		log.WithError(err).Error("Error getting backup volume config from backup target")
 		return nil // Ignore error to prevent enqueue
 	}
 	if backupVolumeInfo == nil {
+		logrus.Infof("bkv %v: reconcile 9", backupVolume.Name)
 		return nil
 	}
 
 	// Update the Backup CR spec.syncRequestAt to request the
 	// backup_controller to reconcile the Backup CR if the last backup changed
 	if backupVolume.Status.LastBackupName != backupVolumeInfo.LastBackupName {
+		logrus.Infof("bkv %v: reconcile 10", backupVolume.Name)
+
 		backup, err := bvc.ds.GetBackup(backupVolumeInfo.LastBackupName)
 		if err == nil {
 			backup.Spec.SyncRequestedAt = syncTime
@@ -407,6 +422,8 @@ func (bvc *BackupVolumeController) reconcile(backupVolumeName string) (err error
 	backupVolume.Status.BackingImageName = backupVolumeInfo.BackingImageName
 	backupVolume.Status.BackingImageChecksum = backupVolumeInfo.BackingImageChecksum
 	backupVolume.Status.LastSyncedAt = syncTime
+
+	logrus.Infof("bkv %v: reconcile 11", backupVolume.Name)
 	return nil
 }
 

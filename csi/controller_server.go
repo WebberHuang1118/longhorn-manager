@@ -638,6 +638,13 @@ func (cs *ControllerServer) createCSISnapshotTypeLonghornBackup(req *csi.CreateS
 		return nil, status.Error(codes.InvalidArgument, "Snapshot name must be provided")
 	}
 
+	logrus.Infof("**** createCSISnapshotTypeLonghornBackup enter: csiSnapshotName %v csiVolumeName %v****",
+		csiSnapshotName, csiVolumeName)
+	defer func() {
+		logrus.Infof("**** createCSISnapshotTypeLonghornBackup leave: csiSnapshotName %v csiVolumeName %v****",
+			csiSnapshotName, csiVolumeName)
+	}()
+
 	// we check for backup existence first, since it's possible that
 	// the actual volume is no longer available but the backup still is.
 	backupVolume, err := cs.apiClient.BackupVolume.ById(csiVolumeName)

@@ -253,6 +253,7 @@ func (bc *BackupController) reconcile(backupName string) (err error) {
 	if !isResponsible {
 		return nil
 	}
+
 	if backup.Status.OwnerID != bc.controllerID {
 		backup.Status.OwnerID = bc.controllerID
 		backup, err = bc.ds.UpdateBackupStatus(backup)
@@ -264,6 +265,9 @@ func (bc *BackupController) reconcile(backupName string) (err error) {
 			return err
 		}
 	}
+
+	logrus.Infof("aaaa bk %v: enter controller aaaa", backupName)
+	defer func() { logrus.Infof("aaaa bk %v: leave controller with err %v aaaa", backupName, err) }()
 
 	log := getLoggerForBackup(bc.logger, backup)
 
@@ -277,6 +281,8 @@ func (bc *BackupController) reconcile(backupName string) (err error) {
 		return nil
 	}
 
+	logrus.Infof("bk %v: reconcile 1, backupTarget %v", backupName, backupTarget.Name)
+
 	// Find the backup volume name from label
 	backupVolumeName, err := bc.getBackupVolumeName(backup)
 	if err != nil {
@@ -287,6 +293,8 @@ func (bc *BackupController) reconcile(backupName string) (err error) {
 		return err
 	}
 
+	logrus.Infof("bk %v: reconcile 2, backupVolumeName %v", backupName, backupVolumeName)
+
 	// Examine DeletionTimestamp to determine if object is under deletion
 	if !backup.DeletionTimestamp.IsZero() {
 		backupVolume, err := bc.ds.GetBackupVolume(backupVolumeName)
@@ -294,8 +302,12 @@ func (bc *BackupController) reconcile(backupName string) (err error) {
 			return err
 		}
 
+		logrus.Infof("bk %v: reconcile 3, backupVolume %v", backupName, backupVolume.Name)
+
 		if backupTarget.Spec.BackupTargetURL != "" &&
 			backupVolume != nil && backupVolume.DeletionTimestamp == nil {
+			logrus.Infof("bk %v: reconcile 4", backupName)
+
 			backupTargetClient, err := newBackupTargetClientFromDefaultEngineImage(bc.ds, backupTarget)
 			if err != nil {
 				log.WithError(err).Error("Error init backup target clients")
@@ -308,6 +320,8 @@ func (bc *BackupController) reconcile(backupName string) (err error) {
 			}
 
 			backupURL := backupstore.EncodeBackupURL(backup.Name, backupVolumeName, backupTargetClient.URL)
+			logrus.Infof("bk %v: reconcile 5, backupURL %v", backupName, backupURL)
+
 			if err := backupTargetClient.BackupDelete(backupURL, backupTargetClient.Credential); err != nil {
 				log.WithError(err).Error("Error deleting remote backup")
 				return err
@@ -316,6 +330,8 @@ func (bc *BackupController) reconcile(backupName string) (err error) {
 
 		// Request backup_volume_controller to reconcile BackupVolume immediately if it's the last backup
 		if backupVolume != nil && backupVolume.Status.LastBackupName == backup.Name {
+			logrus.Infof("bk %v: reconcile 6", backupName)
+
 			backupVolume.Spec.SyncRequestedAt = metav1.Time{Time: time.Now().UTC()}
 			if _, err = bc.ds.UpdateBackupVolume(backupVolume); err != nil && !apierrors.IsConflict(errors.Cause(err)) {
 				log.WithError(err).Errorf("Error updating backup volume %s spec", backupVolumeName)
@@ -327,8 +343,10 @@ func (bc *BackupController) reconcile(backupName string) (err error) {
 
 		// Disable monitor regardless of backup state
 		bc.disableBackupMonitor(backup.Name)
+		logrus.Infof("bk %v: reconcile 7", backupName)
 
 		if backup.Status.State == longhorn.BackupStateError || backup.Status.State == longhorn.BackupStateUnknown {
+			logrus.Infof("bk %v: reconcile 8", backupName)
 			bc.eventRecorder.Eventf(backup, corev1.EventTypeWarning, string(backup.Status.State), "Failed backup %s has been deleted: %s", backup.Name, backup.Status.Error)
 		}
 
@@ -368,6 +386,9 @@ func (bc *BackupController) reconcile(backupName string) (err error) {
 	// What the controller needs to do for this case is retrieve the info from the remote backup target.
 	if backup.Status.LastSyncedAt.IsZero() && backup.Spec.SnapshotName != "" {
 		volume, err := bc.ds.GetVolume(backupVolumeName)
+		logrus.Infof("bk %v: reconcile 9, SnapshotName %v volume %v", backupName,
+			backup.Spec.SnapshotName, volume.Name)
+
 		if err != nil {
 			if !apierrors.IsNotFound(err) {
 				return err
@@ -381,17 +402,22 @@ func (bc *BackupController) reconcile(backupName string) (err error) {
 		}
 
 		if backup.Status.SnapshotCreatedAt == "" || backup.Status.VolumeSize == "" {
+			logrus.Infof("bk %v: reconcile 10", backupName)
 			bc.syncBackupStatusWithSnapshotCreationTimeAndVolumeSize(volume, backup)
 		}
 
+		logrus.Infof("bk %v: reconcile 11", backupName)
 		monitor, err := bc.checkMonitor(backup, volume, backupTarget)
 		if err != nil {
 			return err
 		}
 
+		logrus.Infof("bk %v: reconcile 12", backupName)
 		if err = bc.syncWithMonitor(backup, volume, monitor); err != nil {
 			return err
 		}
+
+		logrus.Infof("bk %v: reconcile 13, backup state %v", backupName, backup.Status.State)
 
 		switch backup.Status.State {
 		case longhorn.BackupStateNew, longhorn.BackupStatePending, longhorn.BackupStateInProgress:
@@ -408,6 +434,7 @@ func (bc *BackupController) reconcile(backupName string) (err error) {
 	// The backup config had synced
 	if !backup.Status.LastSyncedAt.IsZero() &&
 		!backup.Spec.SyncRequestedAt.After(backup.Status.LastSyncedAt.Time) {
+		logrus.Infof("bk %v: reconcile 14", backupName)
 		return nil
 	}
 
@@ -420,6 +447,8 @@ func (bc *BackupController) reconcile(backupName string) (err error) {
 
 	backupURL := backupstore.EncodeBackupURL(backup.Name, backupVolumeName, backupTargetClient.URL)
 	backupInfo, err := backupTargetClient.BackupGet(backupURL, backupTargetClient.Credential)
+	logrus.Infof("bk %v: reconcile 15, backupURL %v", backupName, backupURL)
+
 	if err != nil {
 		if !strings.Contains(err.Error(), "in progress") {
 			log.WithError(err).Error("Error inspecting backup config")
@@ -449,6 +478,10 @@ func (bc *BackupController) reconcile(backupName string) (err error) {
 	backup.Status.VolumeCreated = backupInfo.VolumeCreated
 	backup.Status.VolumeBackingImageName = backupInfo.VolumeBackingImageName
 	backup.Status.LastSyncedAt = syncTime
+
+	logrus.Infof("bk %v: reconcile 16, backup state %v",
+		backupName, backup.Status.State)
+
 	return nil
 }
 
@@ -511,6 +544,11 @@ func (bc *BackupController) validateBackingImageChecksum(volName, biName string)
 		return "", err
 	}
 
+	if bv != nil && bi.Status.Checksum != "" && bv.Status.BackingImageChecksum != "" {
+		logrus.Infof("bk: validateBackingImageChecksum 1, bi %v checksum %v bv %v checksum %v",
+			bi.Name, bi.Status.Checksum, bv.Name, bv.Status.BackingImageChecksum)
+	}
+
 	if bv != nil &&
 		bv.Status.BackingImageChecksum != "" && bi.Status.Checksum != "" &&
 		bv.Status.BackingImageChecksum != bi.Status.Checksum {
@@ -531,6 +569,7 @@ func (bc *BackupController) checkMonitor(backup *longhorn.Backup, volume *longho
 	if monitor := bc.hasMonitor(backup.Name); monitor != nil {
 		return monitor, nil
 	}
+	logrus.Infof("bk %v: checkMonitor 1", backup.Name)
 
 	// Backing image checksum validation
 	biChecksum, err := bc.validateBackingImageChecksum(volume.Name, volume.Spec.BackingImage)
@@ -543,6 +582,7 @@ func (bc *BackupController) checkMonitor(backup *longhorn.Backup, volume *longho
 		return nil, err
 	}
 
+	logrus.Infof("bk %v: checkMonitor 2", backup.Name)
 	// Enable the backup monitor
 	monitor, err := bc.enableBackupMonitor(backup, volume, backupTargetClient, biChecksum, engineClientProxy)
 	if err != nil {
@@ -573,6 +613,9 @@ func (bc *BackupController) syncWithMonitor(backup *longhorn.Backup, volume *lon
 	if existingBackupState == backup.Status.State {
 		return nil
 	}
+
+	logrus.Infof("bk %v: syncWithMonitor 1, Progress %v ReplicaAddress %v State %v",
+		backup.Name, backup.Status.Progress, backup.Status.ReplicaAddress, backup.Status.State)
 
 	if backup.Status.Error != "" {
 		bc.eventRecorder.Eventf(volume, corev1.EventTypeWarning, string(backup.Status.State),
@@ -622,6 +665,8 @@ func (bc *BackupController) enableBackupMonitor(backup *longhorn.Backup, volume 
 	if monitor != nil {
 		return monitor, nil
 	}
+
+	logrus.Infof("bk %v: enableBackupMonitor 1", backup.Name)
 
 	bc.monitorLock.Lock()
 	defer bc.monitorLock.Unlock()

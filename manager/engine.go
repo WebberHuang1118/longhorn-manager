@@ -257,6 +257,8 @@ func (m *VolumeManager) BackupSnapshot(backupName, volumeName, snapshotName stri
 			Labels:       labels,
 		},
 	}
+
+	logrus.Infof("****BackupSnapshot: create bk %v with snapshot %v ****", backupName, snapshotName)
 	_, err := m.ds.CreateBackup(backupCR, volumeName)
 	return err
 }
