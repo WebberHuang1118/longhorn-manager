@@ -7,15 +7,13 @@ import (
 	"net/url"
 
 	"github.com/gorilla/mux"
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
-
-	v1 "k8s.io/api/core/v1"
-
 	"github.com/longhorn/longhorn-manager/engineapi"
 	longhorn "github.com/longhorn/longhorn-manager/k8s/pkg/apis/longhorn/v1beta2"
 	"github.com/longhorn/longhorn-manager/manager"
 	"github.com/longhorn/longhorn-manager/types"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+	v1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -246,17 +244,20 @@ func DownloadParametersFromBackingImage(m *manager.VolumeManager) func(req *http
 			return nil, fmt.Errorf("cannot find a default backing image manager for backing image %v download", name)
 		}
 
+		logrus.Infof("DownloadParametersFromBackingImage: targetBIM IP %v", targetBIM.Status.IP)
+
 		cli, err := engineapi.NewBackingImageManagerClient(targetBIM)
 		if err != nil {
 			return nil, err
 		}
-		filePath, address, err := cli.PrepareDownload(name, bi.Status.UUID)
+		filePath, _, err := cli.PrepareDownload(name, bi.Status.UUID)
 		if err != nil {
 			return nil, err
 		}
+
 		return map[string]string{
 			ParameterKeyFilePath: filePath,
-			ParameterKeyAddress:  address,
+			ParameterKeyAddress:  targetBIM.Status.IP + ":8001",
 		}, nil
 	}
 }
