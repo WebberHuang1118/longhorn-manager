@@ -5,20 +5,18 @@ import (
 	"strconv"
 
 	"github.com/pkg/errors"
-
+	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
-
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
-
 	"github.com/longhorn/longhorn-manager/datastore"
 	"github.com/longhorn/longhorn-manager/engineapi"
 	"github.com/longhorn/longhorn-manager/types"
 	"github.com/longhorn/longhorn-manager/util"
-	"github.com/longhorn/longhorn-manager/webhook/admission"
-
 	longhorn "github.com/longhorn/longhorn-manager/k8s/pkg/apis/longhorn/v1beta2"
+
+	"github.com/longhorn/longhorn-manager/webhook/admission"
 	wcommon "github.com/longhorn/longhorn-manager/webhook/common"
 	werror "github.com/longhorn/longhorn-manager/webhook/error"
 )
@@ -52,6 +50,8 @@ func (v *volumeValidator) Create(request *admission.Request, newObj runtime.Obje
 	if !ok {
 		return werror.NewInvalidError(fmt.Sprintf("%v is not a *longhorn.Volume", newObj), "")
 	}
+
+	logrus.Infof("LH webhook volume %v create", volume.Name)
 
 	if !util.ValidateName(volume.Name) {
 		return werror.NewInvalidError(fmt.Sprintf("invalid name %v", volume.Name), "")
