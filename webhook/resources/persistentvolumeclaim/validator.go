@@ -47,15 +47,18 @@ func (v *pvcValidator) Create(request *admission.Request, newObj runtime.Object)
 }
 
 func (v *pvcValidator) Update(request *admission.Request, oldObj runtime.Object, newObj runtime.Object) error {
-	oldPvc, ok := oldObj.(*corev1.PersistentVolumeClaim)
+	oldPVC, ok := oldObj.(*corev1.PersistentVolumeClaim)
 	if !ok {
 		return werror.NewInvalidError(fmt.Sprintf("%v is not a *corev1.PersistentVolumeClaim", oldObj), "")
 	}
-	_, ok = newObj.(*corev1.PersistentVolumeClaim)
+	oldSize := oldPVC.Spec.Resources.Requests.Storage().Value()
+
+	newPVC, ok := newObj.(*corev1.PersistentVolumeClaim)
 	if !ok {
 		return werror.NewInvalidError(fmt.Sprintf("%v is not a *corev1.PersistentVolumeClaim", newObj), "")
 	}
+	newSize := newPVC.Spec.Resources.Requests.Storage().Value()
 
-	logrus.Infof("LH webhook pvc %v update", oldPvc.Name)
+	logrus.Infof("LH webhook pvc %v update old size %v new size %v", oldPVC.Name, oldSize, newSize)
 	return nil
 }
