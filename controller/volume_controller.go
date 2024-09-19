@@ -10,37 +10,31 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/longhorn/backupstore"
+	imtypes "github.com/longhorn/longhorn-instance-manager/pkg/types"
+	imutil "github.com/longhorn/longhorn-instance-manager/pkg/util"
+	"github.com/longhorn/longhorn-manager/constant"
+	"github.com/longhorn/longhorn-manager/datastore"
+	"github.com/longhorn/longhorn-manager/engineapi"
+	longhorn "github.com/longhorn/longhorn-manager/k8s/pkg/apis/longhorn/v1beta2"
+	"github.com/longhorn/longhorn-manager/scheduler"
+	"github.com/longhorn/longhorn-manager/types"
+	"github.com/longhorn/longhorn-manager/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	clientset "k8s.io/client-go/kubernetes"
+	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/flowcontrol"
 	"k8s.io/kubernetes/pkg/controller"
-
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientset "k8s.io/client-go/kubernetes"
-	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
-
-	"github.com/longhorn/backupstore"
-
-	imtypes "github.com/longhorn/longhorn-instance-manager/pkg/types"
-	imutil "github.com/longhorn/longhorn-instance-manager/pkg/util"
-
-	"github.com/longhorn/longhorn-manager/constant"
-	"github.com/longhorn/longhorn-manager/datastore"
-	"github.com/longhorn/longhorn-manager/engineapi"
-	"github.com/longhorn/longhorn-manager/scheduler"
-	"github.com/longhorn/longhorn-manager/types"
-	"github.com/longhorn/longhorn-manager/util"
-
-	longhorn "github.com/longhorn/longhorn-manager/k8s/pkg/apis/longhorn/v1beta2"
 )
 
 var (
@@ -1726,6 +1720,7 @@ func (c *VolumeController) reconcileVolumeCondition(v *longhorn.Volume, e *longh
 
 	scheduled := true
 	aggregatedReplicaScheduledError := util.NewMultiError()
+	log.Warnf("reconcileVolumeCondition: rs count %v", len(rs))
 	for _, r := range rs {
 		// check whether the replica need to be scheduled
 		if r.Spec.NodeID != "" {
@@ -1766,6 +1761,8 @@ func (c *VolumeController) reconcileVolumeCondition(v *longhorn.Volume, e *longh
 
 	failureMessage := ""
 	replenishCount, _ := c.getReplenishReplicasCount(v, rs, e)
+	log.Warnf("reconcileVolumeCondition: scheduled %v replenishCount %v", scheduled, replenishCount)
+
 	if scheduled && replenishCount == 0 {
 		v.Status.Conditions = types.SetCondition(v.Status.Conditions,
 			longhorn.VolumeConditionTypeScheduled, longhorn.ConditionStatusTrue, "", "")
@@ -1790,6 +1787,10 @@ func (c *VolumeController) reconcileVolumeCondition(v *longhorn.Volume, e *longh
 			}
 		}
 	}
+	if len(rs) == 0 {
+		scheduled = false
+		aggregatedReplicaScheduledError.Append(util.NewMultiError(longhorn.ErrorReplicaScheduleInsufficientStorage))
+	}
 	if !scheduled {
 		if len(aggregatedReplicaScheduledError) == 0 {
 			aggregatedReplicaScheduledError.Append(util.NewMultiError(longhorn.ErrorReplicaScheduleSchedulingFailed))
@@ -1803,6 +1804,7 @@ func (c *VolumeController) reconcileVolumeCondition(v *longhorn.Volume, e *longh
 		}
 	}
 
+	log.Warnf("reconcileVolumeCondition: scheduled %v failureMessage %v", scheduled, failureMessage)
 	if err := c.ds.UpdatePVAnnotation(v, types.PVAnnotationLonghornVolumeSchedulingError, failureMessage); err != nil {
 		log.Warnf("Failed to update PV annotation for volume %v", v.Name)
 	}
