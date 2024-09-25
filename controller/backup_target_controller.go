@@ -6,31 +6,26 @@ import (
 	"strings"
 	"time"
 
+	systembackupstore "github.com/longhorn/backupstore/systembackup"
+	"github.com/longhorn/longhorn-manager/datastore"
+	"github.com/longhorn/longhorn-manager/engineapi"
+	longhorn "github.com/longhorn/longhorn-manager/k8s/pkg/apis/longhorn/v1beta2"
+	"github.com/longhorn/longhorn-manager/types"
+	"github.com/longhorn/longhorn-manager/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
-	"k8s.io/kubernetes/pkg/controller"
-
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
-
-	systembackupstore "github.com/longhorn/backupstore/systembackup"
-
-	"github.com/longhorn/longhorn-manager/datastore"
-	"github.com/longhorn/longhorn-manager/engineapi"
-	"github.com/longhorn/longhorn-manager/types"
-	"github.com/longhorn/longhorn-manager/util"
-
-	longhorn "github.com/longhorn/longhorn-manager/k8s/pkg/apis/longhorn/v1beta2"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
+	"k8s.io/kubernetes/pkg/controller"
 )
 
 type BackupTargetController struct {
@@ -473,6 +468,9 @@ func (btc *BackupTargetController) syncBackupVolume(backupStoreBackupVolumeNames
 		clusterBackupVolumesSet.Insert(b.Name)
 	}
 
+	logrus.Infof("syncBackupVolume: clusterBackupVolumesSet %v", clusterBackupVolumesSet)
+	logrus.Infof("syncBackupVolume: backupStoreBackupVolumes %v", backupStoreBackupVolumes)
+
 	// TODO: add a unit test, separate to a function
 	// Get a list of backup volumes that *are* in the backup target and *aren't* in the cluster
 	// and create the BackupVolume CR in the cluster
@@ -500,9 +498,10 @@ func (btc *BackupTargetController) syncBackupVolume(backupStoreBackupVolumeNames
 	}
 	for backupVolumeName := range backupVolumesToDelete {
 		log.WithField("backupVolume", backupVolumeName).Info("Deleting backup volume from cluster")
-		if err = btc.ds.DeleteBackupVolume(backupVolumeName); err != nil {
-			return errors.Wrapf(err, "failed to delete backup volume %s from cluster", backupVolumeName)
-		}
+		logrus.Infof("syncBackupVolume: skip delete backupvolume %v", backupVolumeName)
+		// if err = btc.ds.DeleteBackupVolume(backupVolumeName); err != nil {
+		// 	return errors.Wrapf(err, "failed to delete backup volume %s from cluster", backupVolumeName)
+		// }
 	}
 
 	// Update the BackupVolume CR spec.syncRequestAt to request the
