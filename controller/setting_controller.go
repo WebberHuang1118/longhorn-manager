@@ -14,35 +14,30 @@ import (
 	"strings"
 	"time"
 
+	lhns "github.com/longhorn/go-common-libs/ns"
+	"github.com/longhorn/longhorn-manager/constant"
+	"github.com/longhorn/longhorn-manager/datastore"
+	longhorn "github.com/longhorn/longhorn-manager/k8s/pkg/apis/longhorn/v1beta2"
+	"github.com/longhorn/longhorn-manager/types"
+	"github.com/longhorn/longhorn-manager/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientset "k8s.io/client-go/kubernetes"
-	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
-	metricsclientset "k8s.io/metrics/pkg/client/clientset/versioned"
-
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	clientset "k8s.io/client-go/kubernetes"
+	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/kubernetes/pkg/controller"
-
-	lhns "github.com/longhorn/go-common-libs/ns"
-
-	"github.com/longhorn/longhorn-manager/constant"
-	"github.com/longhorn/longhorn-manager/datastore"
-	"github.com/longhorn/longhorn-manager/types"
-	"github.com/longhorn/longhorn-manager/util"
-
-	longhorn "github.com/longhorn/longhorn-manager/k8s/pkg/apis/longhorn/v1beta2"
+	metricsclientset "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
 const (
@@ -1289,6 +1284,7 @@ func (bst *BackupStoreTimer) Start() {
 		}
 
 		log.Debug("Triggering sync backup target")
+		logrus.Infof("Start: Triggering sync backup target")
 		backupTarget.Spec.SyncRequestedAt = metav1.Time{Time: time.Now().UTC()}
 		if _, err = bst.ds.UpdateBackupTarget(backupTarget); err != nil && !apierrors.IsConflict(errors.Cause(err)) {
 			log.WithError(err).Warn("Failed to updating backup target")
