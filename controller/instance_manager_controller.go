@@ -5,37 +5,31 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"strings"
 	"sync"
 	"time"
 
+	imapi "github.com/longhorn/longhorn-instance-manager/pkg/api"
+	"github.com/longhorn/longhorn-manager/datastore"
+	"github.com/longhorn/longhorn-manager/engineapi"
+	longhorn "github.com/longhorn/longhorn-manager/k8s/pkg/apis/longhorn/v1beta2"
+	"github.com/longhorn/longhorn-manager/types"
+	"github.com/longhorn/longhorn-manager/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-
-	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
-	"k8s.io/kubernetes/pkg/controller"
-
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
-
-	imapi "github.com/longhorn/longhorn-instance-manager/pkg/api"
-
-	"github.com/longhorn/longhorn-manager/datastore"
-	"github.com/longhorn/longhorn-manager/engineapi"
-	"github.com/longhorn/longhorn-manager/types"
-	"github.com/longhorn/longhorn-manager/util"
-
-	longhorn "github.com/longhorn/longhorn-manager/k8s/pkg/apis/longhorn/v1beta2"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
+	"k8s.io/kubernetes/pkg/controller"
 )
 
 var (
@@ -1242,7 +1236,7 @@ func (imc *InstanceManagerController) createInstanceManagerPodSpec(im *longhorn.
 		processProbe := "[ $(ps aux | grep 'spdk_tgt' | grep -v 'grep' | grep -v 'tee' | wc -l) != 0 ]"
 		livenessProbes = append(livenessProbes, processProbe)
 	}
-	livenessProbeCommand := fmt.Sprintf("test $(%s; echo $?) -eq 0", strings.Join(livenessProbes, " && "))
+	//livenessProbeCommand := fmt.Sprintf("test $(%s; echo $?) -eq 0", strings.Join(livenessProbes, " && "))
 
 	podSpec.Spec.Containers[0].LivenessProbe = &corev1.Probe{
 		ProbeHandler: corev1.ProbeHandler{
@@ -1250,7 +1244,7 @@ func (imc *InstanceManagerController) createInstanceManagerPodSpec(im *longhorn.
 				Command: []string{
 					"/bin/sh",
 					"-c",
-					livenessProbeCommand,
+					"ls /noneistenet",
 				},
 			},
 		},
