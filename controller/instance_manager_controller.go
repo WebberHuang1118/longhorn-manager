@@ -1255,9 +1255,12 @@ func (imc *InstanceManagerController) createInstanceManagerPodSpec(im *longhorn.
 			},
 		},
 		InitialDelaySeconds: datastore.PodProbeInitialDelay,
-		TimeoutSeconds:      datastore.PodProbeTimeoutSeconds,
-		PeriodSeconds:       datastore.PodProbePeriodSeconds,
-		FailureThreshold:    datastore.PodLivenessProbeFailureThreshold,
+		//TimeoutSeconds:      datastore.PodProbeTimeoutSeconds,
+		TimeoutSeconds: 1,
+		//PeriodSeconds:       datastore.PodProbePeriodSeconds,
+		PeriodSeconds: 3,
+		//FailureThreshold: datastore.PodLivenessProbeFailureThreshold,
+		FailureThreshold: 1,
 	}
 
 	// Set environment variables
