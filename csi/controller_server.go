@@ -13,18 +13,16 @@ import (
 	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	longhornclient "github.com/longhorn/longhorn-manager/client"
+	"github.com/longhorn/longhorn-manager/datastore"
+	longhorn "github.com/longhorn/longhorn-manager/k8s/pkg/apis/longhorn/v1beta2"
+	"github.com/longhorn/longhorn-manager/types"
+	"github.com/longhorn/longhorn-manager/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
-
-	"github.com/longhorn/longhorn-manager/datastore"
-	"github.com/longhorn/longhorn-manager/types"
-	"github.com/longhorn/longhorn-manager/util"
-
-	longhornclient "github.com/longhorn/longhorn-manager/client"
-	longhorn "github.com/longhorn/longhorn-manager/k8s/pkg/apis/longhorn/v1beta2"
 )
 
 const (
@@ -127,26 +125,40 @@ func (cs *ControllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 						return nil, status.Errorf(codes.NotFound, "volume source snapshot %v is not found", snapshot.SnapshotId)
 					}
 					backupName := id
-					bvs, err := cs.getBackupVolumes(sourceVolumeName)
+					logrus.Infof("CreateVolume from backup: sourceVolumeName %v backupName %v", sourceVolumeName, backupName)
+
+					bv, err := cs.apiClient.BackupVolume.ById(sourceVolumeName)
+					logrus.Infof("CreateVolume from backup: bv %+v err %v", bv, err)
 					if err != nil {
-						return nil, status.Errorf(codes.Internal, "failed to retrieve backup volumes of volume %v: %v", sourceVolumeName, err)
+						return nil, status.Errorf(codes.NotFound, "failed to restore CSI snapshot %s backup volume %s unavailable", snapshot.SnapshotId, sourceVolumeName)
 					}
-					if len(bvs) == 0 {
-						return nil, status.Errorf(codes.NotFound, "failed to restore CSI snapshot %v of volume %v: there is no backup volume", snapshot.SnapshotId, sourceVolumeName)
-					}
-					var backup *longhornclient.Backup
-					for _, bv := range bvs {
-						backup, err = cs.apiClient.BackupVolume.ActionBackupGet(bv, &longhornclient.BackupInput{Name: backupName})
-						if err != nil {
-							return nil, status.Errorf(codes.NotFound, "failed to restore CSI snapshot %v : failed to get backup %v: %v", snapshot.SnapshotId, backupName, err)
-						}
-						if backup != nil {
-							break
-						}
-					}
-					if backup == nil {
+
+					backup, err := cs.apiClient.BackupVolume.ActionBackupGet(bv, &longhornclient.BackupInput{Name: backupName})
+					logrus.Infof("CreateVolume from backup: backup %+v err %v", bv, err)
+					if err != nil {
 						return nil, status.Errorf(codes.NotFound, "failed to restore CSI snapshot %v backup %s unavailable", snapshot.SnapshotId, backupName)
 					}
+
+					// bvs, err := cs.getBackupVolumes(sourceVolumeName)
+					// if err != nil {
+					// 	return nil, status.Errorf(codes.Internal, "failed to retrieve backup volumes of volume %v: %v", sourceVolumeName, err)
+					// }
+					// if len(bvs) == 0 {
+					// 	return nil, status.Errorf(codes.NotFound, "failed to restore CSI snapshot %v of volume %v: there is no backup volume", snapshot.SnapshotId, sourceVolumeName)
+					// }
+					// var backup *longhornclient.Backup
+					// for _, bv := range bvs {
+					// 	backup, err = cs.apiClient.BackupVolume.ActionBackupGet(bv, &longhornclient.BackupInput{Name: backupName})
+					// 	if err != nil {
+					// 		return nil, status.Errorf(codes.NotFound, "failed to restore CSI snapshot %v : failed to get backup %v: %v", snapshot.SnapshotId, backupName, err)
+					// 	}
+					// 	if backup != nil {
+					// 		break
+					// 	}
+					// }
+					// if backup == nil {
+					// 	return nil, status.Errorf(codes.NotFound, "failed to restore CSI snapshot %v backup %s unavailable", snapshot.SnapshotId, backupName)
+					// }
 
 					// use the fromBackup method for the csi snapshot restores as well
 					// the same parameter was previously only used for restores based on the storage class
