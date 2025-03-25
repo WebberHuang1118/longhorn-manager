@@ -4,20 +4,17 @@ import (
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime"
-
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
-
 	"github.com/longhorn/longhorn-manager/datastore"
 	"github.com/longhorn/longhorn-manager/engineapi"
 	"github.com/longhorn/longhorn-manager/manager"
 	"github.com/longhorn/longhorn-manager/types"
 	"github.com/longhorn/longhorn-manager/util"
-	"github.com/longhorn/longhorn-manager/webhook/admission"
-
 	longhorn "github.com/longhorn/longhorn-manager/k8s/pkg/apis/longhorn/v1beta2"
-	werror "github.com/longhorn/longhorn-manager/webhook/error"
-
 	bimtypes "github.com/longhorn/backing-image-manager/pkg/types"
+
+	"github.com/longhorn/longhorn-manager/webhook/admission"
+	werror "github.com/longhorn/longhorn-manager/webhook/error"
 )
 
 type backingImageValidator struct {
@@ -151,18 +148,18 @@ func (b *backingImageValidator) Update(request *admission.Request, oldObj runtim
 }
 
 func (b *backingImageValidator) Delete(request *admission.Request, oldObj runtime.Object) error {
-	backingImage, ok := oldObj.(*longhorn.BackingImage)
-	if !ok {
-		return werror.NewInvalidError(fmt.Sprintf("%v is not a *longhorn.BackingImage", oldObj), "")
-	}
+	// backingImage, ok := oldObj.(*longhorn.BackingImage)
+	// if !ok {
+	// 	return werror.NewInvalidError(fmt.Sprintf("%v is not a *longhorn.BackingImage", oldObj), "")
+	// }
 
-	replicas, err := b.ds.ListReplicasByBackingImage(backingImage.Name)
-	if err != nil {
-		return werror.NewInvalidError(fmt.Sprintf("cannot delete backing image %v since the error %v", backingImage.Name, err.Error()), "")
-	}
-	if len(replicas) != 0 {
-		return werror.NewInvalidError(fmt.Sprintf("cannot delete backing image %v since there are replicas using it", backingImage.Name), "")
-	}
+	// replicas, err := b.ds.ListReplicasByBackingImage(backingImage.Name)
+	// if err != nil {
+	// 	return werror.NewInvalidError(fmt.Sprintf("cannot delete backing image %v since the error %v", backingImage.Name, err.Error()), "")
+	// }
+	// if len(replicas) != 0 {
+	// 	return werror.NewInvalidError(fmt.Sprintf("cannot delete backing image %v since there are replicas using it", backingImage.Name), "")
+	// }
 	return nil
 }
 
