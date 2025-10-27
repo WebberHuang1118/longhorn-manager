@@ -14,18 +14,14 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/sirupsen/logrus"
-	"golang.org/x/sys/unix"
-
-	"k8s.io/mount-utils"
-
-	utilexec "k8s.io/utils/exec"
-
-	"github.com/longhorn/longhorn-manager/types"
-	"github.com/longhorn/longhorn-manager/util"
-
 	longhornclient "github.com/longhorn/longhorn-manager/client"
 	longhorn "github.com/longhorn/longhorn-manager/k8s/pkg/apis/longhorn/v1beta2"
+	"github.com/longhorn/longhorn-manager/types"
+	"github.com/longhorn/longhorn-manager/util"
+	"github.com/sirupsen/logrus"
+	"golang.org/x/sys/unix"
+	"k8s.io/mount-utils"
+	utilexec "k8s.io/utils/exec"
 )
 
 const (
@@ -453,6 +449,56 @@ func makeFile(pathname string) error {
 		}
 	}
 	return nil
+}
+
+// ensureBlockDeviceMountTarget checks and prepares the target path for block device mounting.
+// It validates that the path is in a valid state for mounting, cleaning up any corrupt state.
+// Returns true if already correctly mounted, false if needs mounting, or error if cleanup fails.
+func ensureBlockDeviceMountTarget(targetPath string, mounter mount.Interface) (bool, error) {
+	// Check if target path is already mounted
+	isMounted, err := mounter.IsMountPoint(targetPath)
+	if err == nil && isMounted {
+		// Already mounted - assume it's correct (caller can verify device if needed)
+		return true, nil
+	}
+
+	// Not correctly mounted - clean it up completely
+	// This handles: broken symlinks, directories, stale mounts, corrupt state, etc.
+
+	// Try to unmount first (handles stale/stuck mounts)
+	if unmountErr := unmount(targetPath, mounter); unmountErr != nil {
+		logrus.WithError(unmountErr).Debugf("Unmount attempt on %v during cleanup (may not be mounted)", targetPath)
+	}
+
+	// Check if path exists
+	_, statErr := os.Lstat(targetPath)
+	if os.IsNotExist(statErr) {
+		// Path doesn't exist - ready for mounting
+		return false, nil
+	}
+
+	// Handle other stat errors
+	if statErr != nil {
+		logrus.WithError(statErr).Warnf("Error checking target path %v, will attempt cleanup anyway", targetPath)
+	}
+
+	// Path exists - remove it
+	logrus.Warnf("Target path %v exists but is not correctly mounted, removing", targetPath)
+
+	removeErr := os.RemoveAll(targetPath)
+	if removeErr == nil {
+		logrus.Infof("Removed target path %v", targetPath)
+		return false, nil
+	}
+
+	// If normal remove fails, try lazy unmount for stuck mounts
+	logrus.WithError(removeErr).Warnf("Failed to remove %v, attempting lazy unmount", targetPath)
+	if lazyErr := mount.CleanupMountPoint(targetPath, mounter, false); lazyErr != nil {
+		return false, fmt.Errorf("failed to cleanup target path %v: %v", targetPath, lazyErr)
+	}
+
+	logrus.Infof("Successfully cleaned up stuck mount at %v", targetPath)
+	return false, nil
 }
 
 // requiresSharedAccess checks if the volume is requested to be multi node capable

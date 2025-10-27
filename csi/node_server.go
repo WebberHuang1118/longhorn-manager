@@ -362,12 +362,23 @@ func (ns *NodeServer) nodeStageBlockVolume(volumeID, devicePath, stagingTargetPa
 func (ns *NodeServer) nodePublishBlockVolume(volumeID, devicePath, targetPath string, mounter mount.Interface) error {
 	log := ns.log.WithFields(logrus.Fields{"function": "nodePublishBlockVolume"})
 
-	// we ensure the parent directory exists and is valid
+	// Ensure the parent directory exists and is valid
 	if _, err := ensureDirectory(filepath.Dir(targetPath)); err != nil {
 		return status.Errorf(codes.Internal, "failed to prepare mount point for block device %v: %v", devicePath, err)
 	}
 
-	// create file where we can bind mount the device to
+	// Check and prepare the target path for mounting
+	alreadyMounted, err := ensureBlockDeviceMountTarget(targetPath, mounter)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to prepare target path %v for mounting: %v", targetPath, err)
+	}
+
+	if alreadyMounted {
+		log.Infof("Target path %v is already mounted, assuming correct mount", targetPath)
+		return nil
+	}
+
+	// Create the target file for bind mounting
 	if err := makeFile(targetPath); err != nil {
 		return status.Errorf(codes.Internal, "failed to create file %v: %v", targetPath, err)
 	}
