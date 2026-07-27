@@ -204,6 +204,8 @@ const (
 	LonghornLabelRecurringJobKeyPrefixFmt = "recurring-%s.longhorn.io"
 	LonghornLabelVolumeSettingKeyPrefix   = "setting.longhorn.io"
 
+	HarvesterLabelRWXVolumeService = "harvesterhci.io/rwx-vol-service"
+
 	LonghornLabelEngineImage                     = "engine-image"
 	LonghornLabelInstanceManager                 = "instance-manager"
 	LonghornLabelNode                            = "node"

@@ -1419,7 +1419,7 @@ func (c *ShareManagerController) createServiceManifest(sm *longhorn.ShareManager
 			Name:            sm.Name,
 			Namespace:       c.namespace,
 			OwnerReferences: datastore.GetOwnerReferencesForShareManager(sm, false),
-			Labels:          types.GetShareManagerInstanceLabel(sm.Name),
+			Labels:          getShareManagerServiceLabels(sm.Name),
 		},
 		Spec: corev1.ServiceSpec{
 			Type: corev1.ServiceTypeClusterIP,
@@ -1452,6 +1452,12 @@ func (c *ShareManagerController) createServiceManifest(sm *longhorn.ShareManager
 	}
 
 	return service
+}
+
+func getShareManagerServiceLabels(shareManagerName string) map[string]string {
+	labels := types.GetShareManagerInstanceLabel(shareManagerName)
+	labels[types.HarvesterLabelRWXVolumeService] = shareManagerName
+	return labels
 }
 
 func (c *ShareManagerController) createEndpoint(sm *longhorn.ShareManager) (*corev1.Endpoints, error) { // nolint: staticcheck

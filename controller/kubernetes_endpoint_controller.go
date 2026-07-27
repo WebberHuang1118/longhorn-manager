@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"time"
 
 	"github.com/cockroachdb/errors"
@@ -63,6 +64,17 @@ func NewKubernetesEndpointController(
 	}
 	controller.cacheSyncs = append(controller.cacheSyncs, ds.EndpointInformer.HasSynced)
 
+	if _, err = ds.ServiceInformer.AddEventHandler(cache.FilteringResourceEventHandler{
+		FilterFunc: isShareManagerService,
+		Handler: cache.ResourceEventHandlerFuncs{
+			AddFunc:    controller.enqueue,
+			UpdateFunc: func(old, cur interface{}) { controller.enqueue(cur) },
+		},
+	}); err != nil {
+		return nil, err
+	}
+	controller.cacheSyncs = append(controller.cacheSyncs, ds.ServiceInformer.HasSynced)
+
 	if _, err = ds.PodInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    controller.enqueuePodChange,
 		UpdateFunc: func(old, cur interface{}) { controller.enqueuePodChange(cur) },
@@ -72,6 +84,15 @@ func NewKubernetesEndpointController(
 	controller.cacheSyncs = append(controller.cacheSyncs, ds.PodInformer.HasSynced)
 
 	return controller, nil
+}
+
+func isShareManagerService(obj interface{}) bool {
+	service, ok := obj.(*corev1.Service)
+	if !ok {
+		return false
+	}
+	_, exists := service.Labels[types.GetLonghornLabelKey(types.LonghornLabelShareManager)]
+	return exists
 }
 
 func (c *KubernetesEndpointController) enqueue(obj interface{}) {
@@ -201,28 +222,14 @@ func (c *KubernetesEndpointController) reconcile(endpointName string) (err error
 		return nil
 	}
 
-	existingEndpoint := endpoint.DeepCopy()
-	defer func() {
-		if err != nil {
-			return
-		}
-
-		if reflect.DeepEqual(existingEndpoint, endpoint) {
-			return
-		}
-
-		_, err = c.ds.UpdateKubernetesEndpoint(endpoint)
-		if err != nil {
-			log.WithError(err).Debug("Requeue due to failed Kubernetes Endpoint update")
-			c.enqueue(endpoint)
-			err = nil // nolint: ineffassign
-			return
-		}
-	}()
+	existingEndpoint := endpoint
+	endpoint = endpoint.DeepCopy()
+	isShareManagerEndpoint := false
 
 	for _, ownerRef := range endpoint.OwnerReferences {
 		switch ownerRef.Kind {
 		case types.LonghornKindShareManager:
+			isShareManagerEndpoint = true
 			err := c.syncShareManager(endpoint)
 			if err != nil {
 				return err
@@ -230,7 +237,88 @@ func (c *KubernetesEndpointController) reconcile(endpointName string) (err error
 		}
 	}
 
+	if !reflect.DeepEqual(existingEndpoint, endpoint) {
+		if _, err = c.ds.UpdateKubernetesEndpoint(endpoint); err != nil {
+			log.WithError(err).Debug("Requeue due to failed Kubernetes Endpoint update")
+			c.enqueue(endpoint)
+			return nil
+		}
+	}
+
+	if isShareManagerEndpoint {
+		return c.syncShareManagerService(endpoint)
+	}
+
 	return nil
+}
+
+func (c *KubernetesEndpointController) syncShareManagerService(endpoint *corev1.Endpoints) error { // nolint: staticcheck
+	service, err := c.ds.GetService(endpoint.Namespace, endpoint.Name)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return errors.Wrapf(err, "failed to get Service for share manager %v", endpoint.Name)
+	}
+
+	service = service.DeepCopy()
+	if !updateShareManagerServiceFromEndpoint(service, endpoint) {
+		return nil
+	}
+
+	if _, err = c.ds.UpdateService(endpoint.Namespace, service); err != nil {
+		return errors.Wrapf(err, "failed to update Service for share manager %v", endpoint.Name)
+	}
+
+	return nil
+}
+
+// updateShareManagerServiceFromEndpoint keeps the Harvester-facing Service fields aligned with
+// the ready addresses that Kubernetes' EndpointSlice mirroring controller publishes.
+func updateShareManagerServiceFromEndpoint(service *corev1.Service, endpoint *corev1.Endpoints) bool { // nolint: staticcheck
+	updated := false
+
+	if service.Labels == nil {
+		service.Labels = map[string]string{}
+	}
+	if service.Labels[types.HarvesterLabelRWXVolumeService] != endpoint.Name {
+		service.Labels[types.HarvesterLabelRWXVolumeService] = endpoint.Name
+		updated = true
+	}
+
+	loadBalancerIP := getEndpointAddress(endpoint, service.Spec.LoadBalancerIP)
+	if service.Spec.LoadBalancerIP != loadBalancerIP {
+		service.Spec.LoadBalancerIP = loadBalancerIP
+		updated = true
+	}
+
+	return updated
+}
+
+func getEndpointAddress(endpoint *corev1.Endpoints, preferredAddress string) string { // nolint: staticcheck
+	addresses := map[string]struct{}{}
+	for _, subset := range endpoint.Subsets {
+		for _, address := range subset.Addresses {
+			if address.IP == "" {
+				continue
+			}
+			addresses[address.IP] = struct{}{}
+		}
+	}
+
+	if _, exists := addresses[preferredAddress]; exists {
+		return preferredAddress
+	}
+
+	sortedAddresses := make([]string, 0, len(addresses))
+	for address := range addresses {
+		sortedAddresses = append(sortedAddresses, address)
+	}
+	sort.Strings(sortedAddresses)
+	if len(sortedAddresses) == 0 {
+		return ""
+	}
+	return sortedAddresses[0]
 }
 
 func (c *KubernetesEndpointController) syncShareManager(endpoint *corev1.Endpoints) (err error) { // nolint: staticcheck
